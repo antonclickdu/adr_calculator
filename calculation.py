@@ -2,8 +2,18 @@ import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import re
-import pdfkit
-from jinja2 import Environment, FileSystemLoader
+
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
 
 
 def safe_filename(name: str) -> str:
@@ -35,8 +45,8 @@ def count_occ(occ: float):
 
 def generate_pdf_and_message(address: str, rooms: str, square: str, adr_real: list[float]):
     """
-    Генерирует PDF по шаблону template.html в корне репозитория
-    и текст сообщения для владельца квартиры.
+    Генерирует PDF с расчётом доходности (без wkhtmltopdf), используя
+    те же данные, что и HTML-шаблон template-4.html.
     """
     # 1. Базовые расчёты
     month = datetime.date.today().month
@@ -64,17 +74,9 @@ def generate_pdf_and_message(address: str, rooms: str, square: str, adr_real: li
     )
     real_occ_avg = f"{real_occ_avg_val}"
 
-    # 3. Доход по месяцам (пока простая модель)
+    # 3. Доход по месяцам (простейшая модель, можно заменить своей)
     base = Decimal("85000")
     step = Decimal("5000")
     real_net_revenue = [base + step * i for i in range(12)]
     real_net_revenue_sum_val = sum(real_net_revenue)
-    real_net_revenue_sum = f"{real_net_revenue_sum_val:,}".replace(",", " ")
-
-    optimistic_net_revenue_sum_val = (
-        real_net_revenue_sum_val * Decimal("1.07")
-    ).quantize(Decimal("1."), rounding=ROUND_HALF_UP)
-    optimistic_net_revenue_sum = f"{optimistic_net_revenue_sum_val:,}".replace(",", " ")
-
-    real_net_revenue_formatted = [
-        f"{revenue:,}".replace(",", "
+    real_net_revenue_sum = f"{real_net_revenue_sum_val:,}".replace(",", "
