@@ -1,8 +1,4 @@
-import os
-os.environ["PYHTML2PDF_SKIP_PILLOW_CHECK"] = "1"
-
 import streamlit as st
-import pyperclip  # Не используется в вебе, но для совместимости
 from calculation import generate_pdf_and_message
 from urllib.parse import quote
 
@@ -32,14 +28,14 @@ if step == 1:
         st.session_state.rooms = rooms
         st.session_state.square = square
         st.session_state.step = 2
-        st.success(f"URL скопирован: {url}")
+        st.success(f"✅ URL готов!")
         st.code(url)
         st.rerun()
 
 elif step == 2:
     st.header("Шаг 2: ADRs конкурентов")
     
-    st.info(f"URL из шага 1: {st.session_state.url}")
+    st.info(f"📍 URL из шага 1: {st.session_state.get('url', 'Не найден')}")
     
     adr_real = st.text_input(
         "ADRs (через запятую, руб)", 
@@ -47,7 +43,7 @@ elif step == 2:
         help="Введите цены за ночь конкурентов, разделенные запятыми"
     )
     
-    if st.button("Сгенерировать PDF и сообщение", type="primary"):
+    if st.button("🎯 Сгенерировать PDF и сообщение", type="primary"):
         try:
             adrs = [float(x.strip()) for x in adr_real.split(",")]
             pdf_path, message = generate_pdf_and_message(
@@ -59,27 +55,28 @@ elif step == 2:
             
             st.session_state.pdf_path = pdf_path
             st.session_state.message = message
-            st.success("Готово!")
+            st.success("✅ PDF и сообщение созданы!")
             st.rerun()
         except Exception as e:
-            st.error(f"Ошибка: {e}")
+            st.error(f"❌ Ошибка: {str(e)}")
     
     if 'pdf_path' in st.session_state:
-        st.subheader("📄 PDF файл")
+        st.subheader("📄 Скачать PDF")
         with open(st.session_state.pdf_path, "rb") as f:
             st.download_button(
-                label="Скачать PDF",
+                label="⬇️ Скачать PDF",
                 data=f.read(),
-                file_name=f"Расчет_доход_{st.session_state.address[:50]}.pdf",
+                file_name=f"Расчет_доход_{st.session_state.address[:30]}.pdf",
                 mime="application/pdf"
             )
         
-        st.subheader("💬 Сообщение")
-        st.text_area("Скопируйте сообщение:", st.session_state.message, height=200)
-        st.button("Скопировать сообщение в буфер", on_click=lambda: None)  # В вебе не копирует
+        st.subheader("💬 Готовое сообщение")
+        st.text_area("📋 Скопируйте:", value=st.session_state.message, height=200, disabled=True)
         
-        if st.button("Вернуться к шагу 1"):
-            for key in ['step', 'url', 'address', 'rooms', 'square', 'pdf_path', 'message']:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Новый расчет"):
+                for key in ['step', 'url', 'address', 'rooms', 'square', 'pdf_path', 'message']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
