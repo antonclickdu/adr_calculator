@@ -55,7 +55,11 @@ elif step == 2:
 
     if st.button("🎯 Сгенерировать PDF и сообщение", type="primary"):
         try:
-            adrs = [float(x.strip().replace(" ", "")) for x in adr_real.split(",") if x.strip()]
+            adrs = [
+                float(x.strip().replace(" ", ""))
+                for x in adr_real.split(",")
+                if x.strip()
+            ]
             if not adrs:
                 st.error("❌ Введите хотя бы одно значение ADR.")
             else:
@@ -98,7 +102,15 @@ if "pdf_path" in st.session_state:
 col1, col2 = st.columns(2)
 with col1:
     if st.button("🔄 Новый расчет"):
-        for key in ["step", "url", "address", "rooms", "square", "pdf_path", "message"]:
+        for key in [
+            "step",
+            "url",
+            "address",
+            "rooms",
+            "square",
+            "pdf_path",
+            "message",
+        ]:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
