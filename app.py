@@ -1,3 +1,6 @@
+import os
+os.environ["PYHTML2PDF_SKIP_PILLOW_CHECK"] = "1"
+
 import streamlit as st
 import pyperclip  # Не используется в вебе, но для совместимости
 from calculation import generate_pdf_and_message
