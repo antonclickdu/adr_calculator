@@ -8,6 +8,7 @@ st.title("🧮 Калькулятор доходности квартир")
 
 step = st.session_state.get("step", 1)
 
+# ===== ШАГ 1 =====
 if step == 1:
     st.header("Шаг 1: Параметры квартиры")
 
@@ -22,7 +23,6 @@ if step == 1:
     with col3:
         square = st.text_input("Площадь", value="40,05")
 
-    # Новое поле — имя менеджера
     manager_name = st.text_input("Имя менеджера", value="Ирина")
 
     if st.button("Получить URL Sutochno.ru", type="primary"):
@@ -43,6 +43,7 @@ if step == 1:
         st.code(url)
         st.rerun()
 
+# ===== ШАГ 2 =====
 elif step == 2:
     st.header("Шаг 2: ADRs конкурентов")
 
@@ -55,22 +56,64 @@ elif step == 2:
     )
 
     if st.button("🎯 Сгенерировать PDF и сообщение", type="primary"):
-        adrs = [
-            float(x.strip().replace(" ", ""))
-            for x in adr_real.split(",")
-            if x.strip()
-        ]
-        if not adrs:
-            st.error("❌ Введите хотя бы одно значение ADR.")
-        else:
-            pdf_path, message = generate_pdf_and_message(
-                st.session_state.address,
-                st.session_state.rooms,
-                st.session_state.square,
-                adrs,
-                st.session_state.get("manager_name", "Ирина"),
-            )
-            st.session_state.pdf_path = pdf_path
-            st.session_state.message = message
-            st.success("✅ PDF и сообщение созданы!")
+        try:
+            adrs = [
+                float(x.strip().replace(" ", ""))
+                for x in adr_real.split(",")
+                if x.strip()
+            ]
+            if not adrs:
+                st.error("❌ Введите хотя бы одно значение ADR.")
+            else:
+                pdf_path, message = generate_pdf_and_message(
+                    st.session_state.address,
+                    st.session_state.rooms,
+                    st.session_state.square,
+                    adrs,
+                    st.session_state.get("manager_name", "Ирина"),
+                )
+                st.session_state.pdf_path = pdf_path
+                st.session_state.message = message
+                st.success("✅ PDF и сообщение созданы!")
+        except Exception as e:
+            st.error(f"❌ Ошибка: {e}")
+
+    # Блоки результата всегда рисуем, если уже есть данные в session_state
+    if "pdf_path" in st.session_state:
+        st.subheader("📄 Скачать PDF")
+        try:
+            with open(st.session_state.pdf_path, "rb") as f:
+                st.download_button(
+                    label="⬇️ Скачать PDF",
+                    data=f.read(),
+                    file_name=f"Расчет_доход_{st.session_state.address[:30]}.pdf",
+                    mime="application/pdf",
+                )
+        except FileNotFoundError:
+            st.error("Файл PDF не найден. Попробуйте сгенерировать его ещё раз.")
+
+        st.subheader("💬 Готовое сообщение")
+        st.text_area(
+            "📋 Скопируйте:",
+            value=st.session_state.get("message", ""),
+            height=200,
+            disabled=True,
+        )
+
+    # Кнопка нового расчёта
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔄 Новый расчет"):
+            for key in [
+                "step",
+                "url",
+                "address",
+                "rooms",
+                "square",
+                "manager_name",
+                "pdf_path",
+                "message",
+            ]:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
