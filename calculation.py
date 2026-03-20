@@ -43,7 +43,13 @@ def count_occ(occ: float):
     return res
 
 
-def generate_pdf_and_message(address: str, rooms: str, square: str, adr_real: list[float], manager_name: str):
+def generate_pdf_and_message(
+    address: str,
+    rooms: str,
+    square: str,
+    adr_real: list[float],
+    manager_name: str,
+):
     """
     Генерирует PDF с расчётом доходности с помощью ReportLab,
     без wkhtmltopdf/xhtml2pdf, максимально повторяя структуру template.html.
