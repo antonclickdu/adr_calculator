@@ -55,25 +55,22 @@ elif step == 2:
     )
 
     if st.button("🎯 Сгенерировать PDF и сообщение", type="primary"):
-        try:
-            adrs = [
-                float(x.strip().replace(" ", ""))
-                for x in adr_real.split(",")
-                if x.strip()
-            ]
-            if not adrs:
-                st.error("❌ Введите хотя бы одно значение ADR.")
-            else:
-                pdf_path, message = generate_pdf_and_message(
-                    st.session_state.address,
-                    st.session_state.rooms,
-                    st.session_state.square,
-                    adrs,
-                    st.session_state.get("manager_name", "Ирина"),
-                )
-                st.session_state.pdf_path = pdf_path
-                st.session_state.message = message
-                st.success("✅ PDF и сообщение созданы!")
-                st.rerun()
-        except Exception as e:
-            st.error(f"❌ Ошибка: {str(e)}")
+    adrs = [
+        float(x.strip().replace(" ", ""))
+        for x in adr_real.split(",")
+        if x.strip()
+    ]
+    if not adrs:
+        st.error("❌ Введите хотя бы одно значение ADR.")
+    else:
+        pdf_path, message = generate_pdf_and_message(
+            st.session_state.address,
+            st.session_state.rooms,
+            st.session_state.square,
+            adrs,
+            st.session_state.get("manager_name", "Ирина"),
+        )
+        st.session_state.pdf_path = pdf_path
+        st.session_state.message = message
+        st.success("✅ PDF и сообщение созданы!")
+        st.rerun()
