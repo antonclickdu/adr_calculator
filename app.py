@@ -6,10 +6,8 @@ st.set_page_config(page_title="Калькулятор доходности", lay
 
 st.title("🧮 Калькулятор доходности квартир")
 
-# Определяем текущий шаг
 step = st.session_state.get("step", 1)
 
-# ===== ШАГ 1 =====
 if step == 1:
     st.header("Шаг 1: Параметры квартиры")
 
@@ -24,6 +22,9 @@ if step == 1:
     with col3:
         square = st.text_input("Площадь", value="40,05")
 
+    # Новое поле — имя менеджера
+    manager_name = st.text_input("Имя менеджера", value="Ирина")
+
     if st.button("Получить URL Sutochno.ru", type="primary"):
         address_term = quote(address.replace(" ", "+"))
         url = (
@@ -35,13 +36,13 @@ if step == 1:
         st.session_state.address = address
         st.session_state.rooms = rooms
         st.session_state.square = square
+        st.session_state.manager_name = manager_name
         st.session_state.step = 2
 
         st.success("✅ URL готов!")
         st.code(url)
         st.rerun()
 
-# ===== ШАГ 2 =====
 elif step == 2:
     st.header("Шаг 2: ADRs конкурентов")
 
@@ -68,6 +69,7 @@ elif step == 2:
                     st.session_state.rooms,
                     st.session_state.square,
                     adrs,
+                    st.session_state.get("manager_name", "Ирина"),
                 )
                 st.session_state.pdf_path = pdf_path
                 st.session_state.message = message
@@ -75,42 +77,3 @@ elif step == 2:
                 st.rerun()
         except Exception as e:
             st.error(f"❌ Ошибка: {str(e)}")
-
-# ===== БЛОК СКАЧИВАНИЯ PDF И СООБЩЕНИЯ =====
-if "pdf_path" in st.session_state:
-    st.subheader("📄 Скачать PDF")
-    try:
-        with open(st.session_state.pdf_path, "rb") as f:
-            st.download_button(
-                label="⬇️ Скачать PDF",
-                data=f.read(),
-                file_name=f"Расчет_доход_{st.session_state.address[:30]}.pdf",
-                mime="application/pdf",
-            )
-    except FileNotFoundError:
-        st.error("Файл PDF не найден. Попробуйте сгенерировать его ещё раз.")
-
-    st.subheader("💬 Готовое сообщение")
-    st.text_area(
-        "📋 Скопируйте:",
-        value=st.session_state.get("message", ""),
-        height=200,
-        disabled=True,
-    )
-
-# ===== КНОПКА НОВОГО РАСЧЁТА =====
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("🔄 Новый расчет"):
-        for key in [
-            "step",
-            "url",
-            "address",
-            "rooms",
-            "square",
-            "pdf_path",
-            "message",
-        ]:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.rerun()
