@@ -2,10 +2,18 @@ import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import re
-from io import BytesIO
 
-from jinja2 import Environment, FileSystemLoader
-from xhtml2pdf import pisa
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
 
 
 def safe_filename(name: str) -> str:
@@ -35,34 +43,10 @@ def count_occ(occ: float):
     return res
 
 
-def render_html_from_template(context: dict) -> str:
+def generate_pdf_and_message(address: str, rooms: str, square: str, adr_real: list[float], manager_name: str):
     """
-    Рендерит template.html (Jinja2) в строку HTML.
-    Шаблон лежит в корне проекта рядом с calculation.py.
-    """
-    base_dir = Path(__file__).resolve().parent
-    env = Environment(loader=FileSystemLoader(str(base_dir)))
-    # Если нужно использовать template-4.html — поменяй название здесь
-    template = env.get_template("template.html")
-    html = template.render(**context)
-    return html
-
-
-def html_to_pdf(html: str, output_path: Path) -> None:
-    """
-    Конвертирует HTML-строку в PDF с помощью xhtml2pdf.
-    """
-    result = BytesIO()
-    pdf = pisa.CreatePDF(src=html, dest=result)  # encoding='utf-8' не обязателен
-    if pdf.err:
-        raise RuntimeError("Ошибка генерации PDF через xhtml2pdf")
-    output_path.write_bytes(result.getvalue())
-
-
-def generate_pdf_and_message(address: str, rooms: str, square: str, adr_real: list[float]):
-    """
-    Основная функция: считает показатели, рендерит HTML по template.html
-    и конвертирует его в PDF через xhtml2pdf.
+    Генерирует PDF с расчётом доходности с помощью ReportLab,
+    без wkhtmltopdf/xhtml2pdf, максимально повторяя структуру template.html.
     """
     # 1. Базовые расчёты
     month = datetime.date.today().month
@@ -90,7 +74,7 @@ def generate_pdf_and_message(address: str, rooms: str, square: str, adr_real: li
     )
     real_occ_avg = f"{real_occ_avg_val}"
 
-    # 3. Доход по месяцам (пока простая модель)
+    # 3. Доход по месяцам (простая модель; можно заменить своей)
     base = Decimal("85000")
     step = Decimal("5000")
     real_net_revenue = [base + step * i for i in range(12)]
@@ -106,31 +90,168 @@ def generate_pdf_and_message(address: str, rooms: str, square: str, adr_real: li
         f"{revenue:,}".replace(",", " ") for revenue in real_net_revenue
     ]
 
-    # 4. Контекст под template.html / template-4.html
-    context = {
-        "address": address,
-        "square": square,
-        "rooms": rooms,
-        "real_net_revenue": real_net_revenue_formatted,
-        "real_net_revenue_sum": real_net_revenue_sum,
-        "optimistic_net_revenue_sum": optimistic_net_revenue_sum,
-        "real_avg_adr": real_avg_adr,
-        "real_occ_avg": real_occ_avg,
-    }
-
-    # 5. Рендер HTML
-    html = render_html_from_template(context)
-
-    # 6. Генерация PDF
+    # 4. Подготовка PDF
     base_dir = Path(__file__).resolve().parent
     filename = safe_filename(f"Расчет доход по {address}") + ".pdf"
     output_path = base_dir / filename
-    html_to_pdf(html, output_path)
 
-    # 7. Текст сообщения
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "Title",
+        parent=styles["Heading1"],
+        fontSize=20,
+        leading=24,
+        alignment=1,
+        spaceAfter=16,
+    )
+    section_title = ParagraphStyle(
+        "SectionTitle",
+        parent=styles["Heading2"],
+        fontSize=14,
+        leading=18,
+        spaceBefore=10,
+        spaceAfter=4,
+    )
+    normal = styles["Normal"]
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=A4,
+        leftMargin=2 * cm,
+        rightMargin=2 * cm,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
+    )
+    story = []
+
+    # Заголовок — "Расчет ожидаемого дохода"
+    story.append(Paragraph("Расчет ожидаемого дохода", title_style))
+    story.append(Spacer(1, 8))
+
+    # Блок: адрес, площадь, тип
+    story.append(Paragraph("Адрес:", section_title))
+    story.append(Paragraph(address, normal))
+    story.append(Spacer(1, 4))
+
+    story.append(Paragraph("Площадь (м²):", section_title))
+    story.append(Paragraph(str(square), normal))
+    story.append(Spacer(1, 4))
+
+    story.append(Paragraph("Тип:", section_title))
+    story.append(Paragraph(f"Квартира, {rooms}", normal))
+    story.append(Spacer(1, 12))
+
+    # Распределение выручки по месяцам (как в шаблоне)
+    story.append(Paragraph("Распределения выручки в рамках календарного года", section_title))
+
+    months = [
+        "январь", "февраль", "март", "апрель",
+        "май", "июнь", "июль", "август",
+        "сентябрь", "октябрь", "ноябрь", "декабрь",
+    ]
+
+    table_data = [["Месяц", "Доход, ₽"]]
+    for m, v in zip(months, real_net_revenue_formatted):
+        table_data.append([m.capitalize(), v])
+
+    table = Table(table_data, colWidths=[5 * cm, 8 * cm])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+            ]
+        )
+    )
+    story.append(table)
+    story.append(Spacer(1, 12))
+
+    # Ожидаемый доход + потенциал
+    story.append(
+        Paragraph(
+            "Ожидаемый годовой доход:<br/>(на руки, после вычета комиссии)",
+            section_title,
+        )
+    )
+    story.append(Paragraph(f"{real_net_revenue_sum} ₽", normal))
+    story.append(Spacer(1, 6))
+
+    story.append(Paragraph("Потенциал роста:", section_title))
+    story.append(Paragraph(f"{optimistic_net_revenue_sum} ₽", normal))
+    story.append(Spacer(1, 12))
+
+    # Важно! – текст как в template.html
+    story.append(Paragraph("Важно!", section_title))
+    story.append(
+        Paragraph(
+            "Указанный ожидаемый доход рассчитан на основе оптимальной рыночной "
+            "стоимости ночи и прогнозируемой загрузки с учетом сезонности, конкуренции и пр. "
+            "Фактический доход формируется из реальных бронирований. "
+            "Все бронирования и начисления полностью прозрачны и доступны вам в личном кабинете. "
+            "Мы учитываем ваши пожелания по ценообразованию. По вашему запросу мы можем пересмотреть "
+            "стоимость ночей (в т.ч. повысить ее). "
+            "Предоставленные расчеты несут ознакомительный характер, не является офертой.",
+            normal,
+        )
+    )
+    story.append(Spacer(1, 12))
+
+    # Как формируется ожидаемый доход
+    story.append(Paragraph("Как формируется ожидаемый доход", section_title))
+    story.append(
+        Paragraph(
+            f"Средняя стоимость ночи проживания для гостя (руб.): {real_avg_adr} ₽.",
+            normal,
+        )
+    )
+    story.append(
+        Paragraph(
+            f"Средняя загрузка по году* (% забронированных ночей): {real_occ_avg}%.",
+            normal,
+        )
+    )
+    story.append(Spacer(1, 8))
+
+    story.append(
+        Paragraph(
+            "Ваш доход (за год) рассчитан за вычетом комиссии сторонних площадок за бронирования (15%) "
+            "и за вычетом комиссии за управление объектом (10%, включая управление объектом "
+            "и ценообразованием на площадках, обработку заказов, 24*7 обслуживание гостей).",
+            normal,
+        )
+    )
+    story.append(Spacer(1, 12))
+
+    # Что учитывали
+    story.append(
+        Paragraph(
+            "Что мы дополнительно учитывали при оценке дохода по квартире:",
+            section_title,
+        )
+    )
+    story.append(
+        Paragraph(
+            "- Транспортная доступность (удаленность от метро и от центра города);<br/>"
+            "- Наличие точек притяжения у района, где расположена квартира;<br/>"
+            "- Параметры квартиры и дома;<br/>"
+            "- Изменение спроса, связанное с сезонами, событиями в городе и пр.",
+            normal,
+        )
+    )
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("* - учитываются сезонные корректировки.", normal))
+
+    # Сборка PDF
+    doc.build(story)
+
+    # Сообщение
     message = f"""Здравствуйте!
 
-Меня зовут Ирина. Мы подготовили расчёт дохода по вашей квартире по адресу: {address}.
+Меня зовут {manager_name}. Мы подготовили расчёт дохода по вашей квартире по адресу: {address}.
 
 Предварительный годовой доход:
 - {real_net_revenue_sum} ₽
