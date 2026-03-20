@@ -21,25 +21,118 @@ def safe_filename(name: str) -> str:
     return name.strip().rstrip(".")
 
 
+# коэффициенты и словари — как в sample-1.3.ipynb
+k_adr = {
+    1: 0.99,
+    2: 0.91,
+    3: 0.95,
+    4: 1,
+    5: 1.05,
+    6: 1.1,
+    7: 1.09,
+    8: 1.07,
+    9: 1.07,
+    10: 1,
+    11: 0.92,
+    12: 1.1,
+}
+
+k_occ = {
+    1: 0.7,
+    2: 0.8,
+    3: 0.8,
+    4: 0.9,
+    5: 1.05,
+    6: 1.15,
+    7: 1.25,
+    8: 1.2,
+    9: 1.05,
+    10: 0.95,
+    11: 0.8,
+    12: 0.95,
+}
+
+days_in_month = {
+    1: 31,
+    2: 28,
+    3: 31,
+    4: 30,
+    5: 31,
+    6: 30,
+    7: 31,
+    8: 31,
+    9: 30,
+    10: 31,
+    11: 30,
+    12: 31,
+}
+
+return_rate = {
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0,
+    6: 0,
+    7: 0.05,
+    8: 0.05,
+    9: 0.05,
+    10: 0.05,
+    11: 0.05,
+    12: 0.05,
+}
+
+adr_net_ota_percent = 0.15
+adr_net_dc_percent = 0.10
+
+
 def count_adr(adr: float, month: int):
-    k_adr = {
-        1: 0.99, 2: 0.91, 3: 0.95, 4: 1, 5: 1.05, 6: 1.1,
-        7: 1.09, 8: 1.07, 9: 1.07, 10: 1, 11: 0.92, 12: 1.1,
-    }
     res = []
     for k_adr_val in k_adr.values():
         res.append((adr / k_adr[month]) * k_adr_val)
     return res
 
 
+def count_adr_net_ota(adr_list):
+    res = []
+    for adr in adr_list:
+        res.append(adr * (1 - adr_net_ota_percent))
+    return res
+
+
+def count_adr_net_los(adr_list, adr_net_ota_list):
+    res = []
+    for month_idx, (adr, adr_net_ota) in enumerate(zip(adr_list, adr_net_ota_list)):
+        m = month_idx + 1
+        res.append(
+            ((1 - return_rate[m]) * adr_net_ota)
+            + (return_rate[m]) * adr
+        )
+    return res
+
+
+def count_adr_net_dc(adr_net_los_list):
+    res = []
+    for adr_net_los in adr_net_los_list:
+        res.append(adr_net_los * (1 - adr_net_dc_percent))
+    return res
+
+
 def count_occ(occ: float):
-    k_occ = {
-        1: 0.7, 2: 0.8, 3: 0.8, 4: 0.9, 5: 1.05, 6: 1.15,
-        7: 1.25, 8: 1.2, 9: 1.05, 10: 0.95, 11: 0.8, 12: 0.95,
-    }
     res = []
     for k_occ_val in k_occ.values():
         res.append(min(0.9, (occ / k_occ[1]) * k_occ_val))
+    return res
+
+
+def count_net_revenue(adr_net_dc_list, occ_list):
+    res = []
+    for month_idx, (adr_net_dc, occ) in enumerate(zip(adr_net_dc_list, occ_list)):
+        m = month_idx + 1
+        val = Decimal(
+            days_in_month[m] * adr_net_dc * occ
+        ).quantize(Decimal("1."), rounding=ROUND_HALF_UP)
+        res.append(val)
     return res
 
 
@@ -51,52 +144,68 @@ def generate_pdf_and_message(
     manager_name: str,
 ):
     """
-    Генерирует PDF с расчётом доходности с помощью ReportLab,
-    без wkhtmltopdf/xhtml2pdf, максимально повторяя структуру template.html.
+    Полный расчёт по логике sample-1.3.ipynb + генерация PDF через ReportLab.
     """
-    # 1. Базовые расчёты
+    # 1. Подготовка данных как в ноутбуке
     month = datetime.date.today().month
-    avg_adr = sum(adr_real) / len(adr_real)
+
+    # adr_real — список цен конкурентов
+    adr_optimistic = adr_real[:]  # в ноутбуке adr_optimistic = adr_real
+
+    occ_real_list = [0.53]  # как в примере
+    occ_optimistic = sum(occ_real_list) * 1.1
+
+    avg_real_adr = sum(adr_real) / len(adr_real)
+    avg_opt_adr = sum(adr_optimistic) / len(adr_real)
 
     vals = {
         "address": address,
         "rooms": rooms,
         "square": square,
-        "adr": [avg_adr, avg_adr],
-        "occupancy": [0.53, 0.583],
-        "month": month,
     }
+    vals.setdefault("adr", [avg_real_adr, avg_opt_adr])
+    vals.setdefault(
+        "occupancy",
+        [sum(occ_real_list) / len(occ_real_list), occ_optimistic / len(occ_real_list)],
+    )
+    vals.setdefault("month", month)
 
-    # 2. ADR и загрузка с учётом сезонности
-    real_adr = count_adr(vals["adr"][0], month)
+    # 2. Реальный сценарий
+    real_adr = count_adr(vals["adr"][0], vals["month"])
     real_avg_adr_val = Decimal(sum(real_adr) / len(real_adr)).quantize(
         Decimal("1."), rounding=ROUND_HALF_UP
     )
     real_avg_adr = f"{real_avg_adr_val:,}".replace(",", " ")
 
+    real_adr_net_ota = count_adr_net_ota(real_adr)
+    real_adr_net_los = count_adr_net_los(real_adr, real_adr_net_ota)
+    real_adr_net_dc = count_adr_net_dc(real_adr_net_los)
     real_occ = count_occ(vals["occupancy"][0])
     real_occ_avg_val = Decimal((sum(real_occ) / len(real_occ)) * 100).quantize(
         Decimal("1."), rounding=ROUND_HALF_UP
     )
-    real_occ_avg = f"{real_occ_avg_val}"
+    real_occ_avg = real_occ_avg_val
 
-    # 3. Доход по месяцам (простая модель; можно заменить своей)
-    base = Decimal("85000")
-    step = Decimal("5000")
-    real_net_revenue = [base + step * i for i in range(12)]
+    real_net_revenue = count_net_revenue(real_adr_net_dc, real_occ)
     real_net_revenue_sum_val = sum(real_net_revenue)
     real_net_revenue_sum = f"{real_net_revenue_sum_val:,}".replace(",", " ")
-
-    optimistic_net_revenue_sum_val = (
-        real_net_revenue_sum_val * Decimal("1.07")
-    ).quantize(Decimal("1."), rounding=ROUND_HALF_UP)
-    optimistic_net_revenue_sum = f"{optimistic_net_revenue_sum_val:,}".replace(",", " ")
-
     real_net_revenue_formatted = [
         f"{revenue:,}".replace(",", " ") for revenue in real_net_revenue
     ]
 
-    # 4. Подготовка PDF
+    # 3. Оптимистичный сценарий
+    optimistic_adr = count_adr(vals["adr"][1], vals["month"])
+    optimistic_adr_net_ota = count_adr_net_ota(optimistic_adr)
+    optimistic_adr_net_los = count_adr_net_los(optimistic_adr, optimistic_adr_net_ota)
+    optimistic_adr_net_dc = count_adr_net_dc(optimistic_adr_net_los)
+    optimistic_occ = count_occ(vals["occupancy"][1])
+    optimistic_net_revenue = count_net_revenue(optimistic_adr_net_dc, optimistic_occ)
+    optimistic_net_revenue_sum_val = sum(optimistic_net_revenue)
+    optimistic_net_revenue_sum = f"{optimistic_net_revenue_sum_val:,}".replace(",", " ")
+
+    max_val = max(max(real_net_revenue), max(optimistic_net_revenue))
+
+    # 4. Генерация PDF (структура близка к HTML-шаблону)
     base_dir = Path(__file__).resolve().parent
     filename = safe_filename(f"Расчет доход по {address}") + ".pdf"
     output_path = base_dir / filename
@@ -130,11 +239,9 @@ def generate_pdf_and_message(
     )
     story = []
 
-    # Заголовок — "Расчет ожидаемого дохода"
     story.append(Paragraph("Расчет ожидаемого дохода", title_style))
     story.append(Spacer(1, 8))
 
-    # Блок: адрес, площадь, тип
     story.append(Paragraph("Адрес:", section_title))
     story.append(Paragraph(address, normal))
     story.append(Spacer(1, 4))
@@ -147,17 +254,15 @@ def generate_pdf_and_message(
     story.append(Paragraph(f"Квартира, {rooms}", normal))
     story.append(Spacer(1, 12))
 
-    # Распределение выручки по месяцам (как в шаблоне)
     story.append(Paragraph("Распределения выручки в рамках календарного года", section_title))
 
-    months = [
+    months_names = [
         "январь", "февраль", "март", "апрель",
         "май", "июнь", "июль", "август",
         "сентябрь", "октябрь", "ноябрь", "декабрь",
     ]
-
-    table_data = [["Месяц", "Доход, ₽"]]
-    for m, v in zip(months, real_net_revenue_formatted):
+    table_data = [["Месяц", "Доход (реальный), ₽"]]
+    for m, v in zip(months_names, real_net_revenue_formatted):
         table_data.append([m.capitalize(), v])
 
     table = Table(table_data, colWidths=[5 * cm, 8 * cm])
@@ -176,10 +281,9 @@ def generate_pdf_and_message(
     story.append(table)
     story.append(Spacer(1, 12))
 
-    # Ожидаемый доход + потенциал
     story.append(
         Paragraph(
-            "Ожидаемый годовой доход:<br/>(на руки, после вычета комиссии)",
+            "Ожидаемый годовой доход (на руки, после вычета комиссии):",
             section_title,
         )
     )
@@ -190,23 +294,6 @@ def generate_pdf_and_message(
     story.append(Paragraph(f"{optimistic_net_revenue_sum} ₽", normal))
     story.append(Spacer(1, 12))
 
-    # Важно! – текст как в template.html
-    story.append(Paragraph("Важно!", section_title))
-    story.append(
-        Paragraph(
-            "Указанный ожидаемый доход рассчитан на основе оптимальной рыночной "
-            "стоимости ночи и прогнозируемой загрузки с учетом сезонности, конкуренции и пр. "
-            "Фактический доход формируется из реальных бронирований. "
-            "Все бронирования и начисления полностью прозрачны и доступны вам в личном кабинете. "
-            "Мы учитываем ваши пожелания по ценообразованию. По вашему запросу мы можем пересмотреть "
-            "стоимость ночей (в т.ч. повысить ее). "
-            "Предоставленные расчеты несут ознакомительный характер, не является офертой.",
-            normal,
-        )
-    )
-    story.append(Spacer(1, 12))
-
-    # Как формируется ожидаемый доход
     story.append(Paragraph("Как формируется ожидаемый доход", section_title))
     story.append(
         Paragraph(
@@ -230,9 +317,8 @@ def generate_pdf_and_message(
             normal,
         )
     )
-    story.append(Spacer(1, 12))
+    story.append(Spacer(1, 8))
 
-    # Что учитывали
     story.append(
         Paragraph(
             "Что мы дополнительно учитывали при оценке дохода по квартире:",
@@ -251,12 +337,12 @@ def generate_pdf_and_message(
     story.append(Spacer(1, 6))
     story.append(Paragraph("* - учитываются сезонные корректировки.", normal))
 
-    # Сборка PDF
     doc.build(story)
 
-    # Сообщение
     message = f"""Здравствуйте!
+
 Меня зовут {manager_name}. Мы подготовили расчёт дохода по вашей квартире по адресу: {address}.
+
 Предварительный годовой доход:
 - {real_net_revenue_sum} ₽
 - с потенциалом роста до {optimistic_net_revenue_sum} ₽
